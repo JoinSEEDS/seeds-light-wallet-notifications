@@ -11,7 +11,7 @@ if (!process.env.SUBSTREAMS_API_KEY) {
 }
 
 const token = process.env.SUBSTREAMS_API_KEY;
-const baseUrl = "https://eos.substreams.pinax.network:443";
+const baseUrl = "https://telos.substreams.pinax.network:443";
 
 // User parameters
 const manifest = "https://spkg.io/pinax-network/antelope-common-v0.4.0.spkg";
@@ -21,7 +21,7 @@ const stopBlockNum = 0;   // Stream indefinitely
 const productionMode = true;
 
 // Parameterize the token contract
-const TOKEN_CONTRACT = process.env.TOKEN_CONTRACT || 'yourtokencontract';
+const TOKEN_CONTRACT = process.env.TOKEN_CONTRACT || 'token.seeds';
 const params = [`filtered_transactions=code:${TOKEN_CONTRACT} && action:transfer`];
 
 async function setupStream() {
