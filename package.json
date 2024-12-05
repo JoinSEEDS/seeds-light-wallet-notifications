@@ -1,5 +1,6 @@
 {
   "name": "seeds-light-wallet-notifications",
+  "type": "module",
   "version": "1.0.0",
   "description": "Seeds Light Wallet notifications backend",
   "main": "substreams.js",
@@ -10,9 +11,13 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@connectrpc/connect-node": "^1.5.0",
     "@substreams/core": "^0.16.0",
     "@substreams/manifest": "^0.15.0",
     "@substreams/node": "^0.6.2",
-    "dotenv": "^16.4.5"
+    "dotenv": "^16.4.5",
+    "firebase-admin": "^12.6.0",
+    "fs": "^0.0.1-security",
+    "node-fetch": "^3.3.2"
   }
 }
