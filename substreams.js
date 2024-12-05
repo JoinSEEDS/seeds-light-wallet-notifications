@@ -3,6 +3,7 @@ import { readPackage } from "@substreams/manifest";
 import { BlockEmitter } from "@substreams/node";
 import { createNodeTransport } from "@substreams/node/createNodeTransport";
 import dotenv from 'dotenv';
+import sendNotification from "./sendNotification";
 
 dotenv.config();
 
@@ -55,14 +56,33 @@ async function setupStream() {
   }
 }
 
+const formatter = new Intl.NumberFormat('en-US', {
+  style: 'currency',
+  currency: 'USD',
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 4,
+  symbol: "",
+})
+
 async function processTransaction(transaction) {
-  console.log(`New transaction: ${JSON.stringify(transaction, null, 2)}`);
-  // Here, you would process the transaction and send push notifications if needed
-  // For example, if it's a token transfer:
+  // console.log(`New transaction: ${JSON.stringify(transaction, null, 2)}`);
   if (transaction.action === 'transfer') {
     const { from, to, quantity } = transaction.data;
     console.log(`Transfer: ${from} -> ${to}: ${quantity}`);
-    // await sendPushNotification(to, quantity);
+    const floatAmount = parseFloat(quantity)
+    var amount = formatter.format(floatAmount)
+
+    const payload = { 
+      title: "",
+      body: 'You received ' + (floatAmount == 1 ? "1 Seed" : amount + " Seeds") + " from " + data.from,
+    }
+
+    try {
+      console.log(`Sending notification to ${to} with payload ${payload.body}`)
+      await sendNotification(to, payload);
+    } catch (error) {
+      console.log("error sending notification: ", error)
+    }
   }
 }
 

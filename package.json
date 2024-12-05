@@ -16,7 +16,7 @@
     "@substreams/manifest": "^0.15.0",
     "@substreams/node": "^0.6.2",
     "dotenv": "^16.4.5",
-    "firebase-admin": "^12.6.0",
+    "firebase-admin": "^13.0.1",
     "fs": "^0.0.1-security",
     "node-fetch": "^3.3.2"
   }

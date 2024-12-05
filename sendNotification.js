@@ -1,110 +1,83 @@
-import dotenv from 'dotenv';
-import fetch from 'node-fetch';
-import fs from 'fs'; // Import the fs module
-dotenv.config();
+// const params = new URLSearchParams({ 
+//     receiverUserId: data.to,
+//     notificationTitle: "",
+//     notificationContent: 'You received ' + (floatAmount == 1 ? "1 Seed" : amount + " Seeds") + " from " + data.from,
+//     apiKey: CLOUD_API_KEY,
+// })
 
-import admin from'firebase-admin';
-const serviceAccountPath = './cert/seeds-service-account.json';
+const admin = require("firebase-admin");
 
-// Check if the service account file exists
-if (!fs.existsSync(serviceAccountPath)) {
-    console.error("Service account file not found:", serviceAccountPath);
-    process.exit(1); // Exit the process if the file is not found
+// Initialize Firebase Admin SDK (ensure your service account key is properly set up)
+if (!admin.apps.length) {
+  admin.initializeApp({
+    credential: admin.credential.cert(require("./cert/seeds-77371-firebase-adminsdk-ogyf6-e941b207db.json")),
+  });
 }
 
-try {
-    admin.initializeApp({
-        credential: admin.credential.cert(serviceAccountPath),
-      });
-      
-} catch(error) {
-    console.log("app init error " + error)
-}
+/**
+ * Sends a push notification to all devices for a given user.
+ * @param {string} userID - The user ID whose devices will receive the notification.
+ * @param {Object} payload - The notification payload to send.
+ * @returns {Promise<void>} - Resolves when the notifications are sent.
+ */
+async function sendNotification(userID, payload) {
+  try {
+    // Fetch the user's Firebase message tokens from the Firestore database
+    const userDoc = await admin.firestore().collection("users").doc(userID).get();
 
-/// How to get these values
-/// Use firebase cli to access firebase, set to seeds project
-
-// CLOUD_API_KEY = api.key on firebase, get it like this:
-// firebase functions:config:get
-
-// CLOUD_URL = url of "paymentReceivedNotification" function
-// firebase functions:config:get
-// 
-// fill in region and project ID from 
-// firebase projects:list
-
-
-const { CLOUD_API_KEY, CLOUD_URL } = process.env
-const formatter = new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 4,
-    symbol: "",
-})
-
-const sendNotification = async ({ from, to, quantity }) => {
-    try {
-
-        const symbol = quantity.split(' ')[1];
-        if (symbol != 'SEEDS') {
-            return;
-        }
-        const floatAmount = parseFloat(quantity);
-        const amount = formatter.format(floatAmount);
-
-        const message = 'You received ' + (floatAmount === 1 ? "1 Seed" : amount + " Seeds") + " from " + from;
-
-        const params = new URLSearchParams({
-            receiverUserId: to,
-            notificationTitle: "",
-            notificationContent: message,
-            apiKey: CLOUD_API_KEY,
-        });
-
-        const notiication = {
-            // token: 'ccvXtid8KE5rjbgPGFpZVy:APA91bFVbctlDKWUdilfzvbT8OiYO6xAahBzFJzdPAY8PhgzQWoyA_DONJQ4UlUK6fkBIS135dWu0GwtdaytqKOEwgnGUif0Tn9PUodU8S75UPlLB-L6ogtef5fbcXBTeSimpzQ83HUb',
-            token: 'e2Jv4kjwLk6Yvgbvt57s2n:APA91bEJLp5s-XLrmYmVdDuSWmYu_wSyedkEqUMG4CwcDKuGGXP0hbHFBgXtjQj0TJjaKNDsXo1jxGVB6tRly-yR_nOQweTMvaSTqBOwiiKLIJ4Fl9qfp2Lb0-_Ps3sZ5fx1jTw1jDgP',
-            notification: {
-              title: 'Hello from Firebase!',
-              body: 'This is a test message.',
-            },
-          };
-        
-        
-          admin.messaging().send(notiication)
-            .then((response) => {
-              console.log('Successfully sent message:', response);
-            })
-            .catch((error) => {
-              console.error('Error sending message:', error);
-            });
-          
-        // const url = `${CLOUD_URL}?${params}`;
-
-        // const res = await fetch(url);
-
-        // if (res.status !== 200) {
-        //     console.error("error sending notification: " + JSON.stringify({ from, to, quantity }, null, 2));
-        //     console.error("error response: " + JSON.stringify(res.status, null, 2));
-        //     console.error("error response: " + JSON.stringify(res.statusText, null, 2));
-        //     console.error("error response: " + JSON.stringify(res.url, null, 2));
-        //     console.error("error response: " + JSON.stringify(res.type, null, 2));
-        // } else {
-        //     console.log("message send success " + url)
-        //     const resJson = await res.json();
-        //     console.log("result " + JSON.stringify(resJson, null, 2))
-
-        // }
-    } catch (error) {
-        console.error("error sending push notification: " + error);
+    if (!userDoc.exists) {
+      throw new Error(`User with ID ${userID} not found.`);
     }
-};
 
-// Export the function using CommonJS module.exports
-// module.exports = sendNotification;
-export default sendNotification;
+    const userData = userDoc.data();
+    const firebaseMessageTokens = userData.firebaseMessageTokens || [];
 
-// Call the function for testing
-// sendNotification({ from: "illumination", to: "testingseeds", quantity: "0.0001 SEEDS" });
-sendNotification({ from: "testingseeds", to: "illumination", quantity: "0.0002 SEEDS" });
+    if (firebaseMessageTokens.length === 0) {
+      console.warn(`No Firebase message tokens found for user ID: ${userID}`);
+      return;
+    }
+
+    // Create a MulticastMessage
+    const message = {
+      tokens: firebaseMessageTokens,
+      notification: {
+        title: payload.title,
+        body: payload.body,
+      },
+      data: payload.data || {}, // Optional additional data
+    };
+
+    // Send notifications using sendEachForMulticast
+    const responses = await admin.messaging().sendEachForMulticast(message);
+
+    // Log response for debugging
+    console.log(`Notifications sent. Success: ${responses.successCount}, Failure: ${responses.failureCount}`);
+
+    // Handle invalid tokens
+    if (responses.failureCount > 0) {
+        const invalidTokens = [];
+        responses.responses.forEach((resp, idx) => {
+          if (!resp.success) {
+            const errorCode = resp.error.errorInfo.code;
+            if (errorCode === 'messaging/registration-token-not-registered') {
+              invalidTokens.push(firebaseMessageTokens[idx]);
+            }
+            console.error(`Error for token ${firebaseMessageTokens[idx]}:`, resp.error);
+          }
+        });
+  
+      if (invalidTokens.length > 0) {
+        console.warn(`Removing invalid tokens for user ${userID}:`, invalidTokens);
+
+        // Update Firestore to remove invalid tokens
+        await admin.firestore().collection("users").doc(userID).update({
+          firebaseMessageTokens: firebaseMessageTokens.filter(token => !invalidTokens.includes(token)),
+        });
+      }
+    }
+  } catch (error) {
+    console.error(`Error sending notification to user ${userID}:`, error);
+  }
+}
+
+module.exports = sendNotification;
