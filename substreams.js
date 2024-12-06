@@ -92,71 +92,93 @@ async function processTransaction(transactionData) {
 }
 
 async function startStreaming() {
-  //while (true) {
-  try {
-    console.log("Setting up stream...");
-    const emitter = await setupStream();
+  let retryCount = 0;
+  const maxRetries = 5;
+  const baseDelay = 5000; // 5 seconds
 
-    emitter.on("anyMessage", (message, cursor, clock) => {
+  async function connectStream() {
+    try {
+      console.log("Setting up stream...");
+      const emitter = await setupStream();
 
-      //console.log("on anymessage " + JSON.stringify(message, null, 2))
-      // Parse transaction
-      if (Array.isArray(message.transactionTraces)) {
-        message.transactionTraces.forEach(trace => {
-          if (Array.isArray(trace.actionTraces)) {
-            trace.actionTraces.forEach(actionTrace => {
-              // Check if the action is a transfer
-              if (actionTrace.action && actionTrace.action.name === "transfer") {
-                const transactionData = JSON.parse(actionTrace.action.jsonData);
-                //console.log("Processing transaction:", transactionData);
-                // console.log("receiver ", actionTrace.receipt.receiver)
+      emitter.on("anyMessage", (message, cursor, clock) => {
+        if (Array.isArray(message.transactionTraces)) {
+          message.transactionTraces.forEach(trace => {
+            if (Array.isArray(trace.actionTraces)) {
+              trace.actionTraces.forEach(actionTrace => {
+                if (actionTrace.action && actionTrace.action.name === "transfer") {
+                  const transactionData = JSON.parse(actionTrace.action.jsonData);
 
-                // One action trace is created for each receiver for each transfer
-                // This means that from, to, token contract, and maybe others each get one action trace, because they're all
-                // notified. In Seeds, histry.seeds is also notified. 
+                  // One action trace is created for each receiver for each transfer
+                  // This means that from, to, token contract, and maybe others each get one action trace, because they're all
+                  // notified. In Seeds, histry.seeds is also notified. 
 
-                // To make sure only process each transaction once, we check that the receiver is the 'to' account
-                // This way we can be pretty sure we don't process this multiple times. 
+                  // To make sure only process each transaction once, we check that the receiver is the 'to' account
+                  // This way we can be pretty sure we don't process this multiple times. 
 
-                // On the other hand a transaction may contain the same action multiple times - e.g. multiple transfers
-                // to different receivers, or the same receiver, and so on. Many exchanges can't handle this properly
-                // But this code should handle it properly. 
-                if (actionTrace.receipt.receiver == transactionData.to) {
-                  processTransaction(transactionData);
+                  // On the other hand a transaction may contain the same action multiple times - e.g. multiple transfers
+                  // to different receivers, or the same receiver, and so on. Many exchanges can't handle this properly
+                  // But this code should handle it properly. 
+
+                  if (actionTrace.receipt.receiver == transactionData.to) {
+                    processTransaction(transactionData);
+                  }
                 }
-              }
-            });
-          }
-        });
-      } else {
-        console.log("No transaction traces found in message.");
-      }
-    });
+              });
+            }
+          });
+        } else {
+          console.log("No transaction traces found in message.");
+        }
+      });
 
-    emitter.on("progress", (progress) => {
-      // console.log(`Processed ${JSON.stringify(progress, null, 2)} bytes`);
-    });
+      emitter.on("close", (error) => {
+        if (error) {
+          console.error("Stream closed with error:", error);
+          retryConnection();
+        } else {
+          console.log("Stream closed normally");
+          retryConnection();
+        }
+      });
 
-    emitter.on("close", (error) => {
-      if (error) {
-        console.error("Stream closed with error:", error);
-      } else {
-        console.log("Stream closed normally");
-      }
-    });
+      emitter.on("fatalError", (error) => {
+        console.error("Fatal error occurred:", error);
+        retryConnection();
+      });
 
-    emitter.on("fatalError", (error) => {
-      console.error("Fatal error occurred:", error);
-    });
+      console.log(`Starting stream for token contract: ${tokenContract}`);
+      emitter.start();
 
-    console.log(`Starting stream for token contract: ${tokenContract}`);
-    emitter.start();
-  } catch (error) {
-    console.error("An error occurred:", error);
-    console.log("Reconnecting in 5 seconds...");
-    await new Promise(resolve => setTimeout(resolve, 5000));
+      // Reset retry count on successful connection
+      retryCount = 0;
+
+      // Periodically restart the stream every hour
+      setTimeout(() => {
+        console.log("Restarting stream to prevent stalling...");
+        emitter.stop();
+        retryConnection();
+      }, 3600000); // 1 hour
+
+    } catch (error) {
+      console.error("An error occurred:", error);
+      retryConnection();
+    }
   }
-  //}
+
+  function retryConnection() {
+    if (retryCount < maxRetries) {
+      const delay = baseDelay * Math.pow(2, retryCount);
+      console.log(`Reconnecting in ${delay / 1000} seconds...`);
+      setTimeout(connectStream, delay);
+      retryCount++;
+    } else {
+      console.error("Max retries reached. Exiting...");
+      process.exit(1);
+    }
+  }
+
+  connectStream();
 }
 
 console.log("✅ Starting filtered transaction monitoring");
