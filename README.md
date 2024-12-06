@@ -4,6 +4,17 @@ Uses Pinax substreams to subscribe to transfer actions
 
 TODO: Hook up to firebase API to send actual notifications
 
+# Install & run
+
+> clone this project
+
+> cp .env.example .env
+
+edit .env and fill in your pinax substream API key and JWT token
+
+> npm i
+> node substreams.js
+
 #### Old system
 
 The old notificaiton system was based on mongoDB - when we were running our own node
