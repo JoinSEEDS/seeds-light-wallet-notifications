@@ -13,6 +13,10 @@ edit .env and fill in your pinax substream API key and JWT token
 > npm i
 > node substreams.js
 
+### Future improvements 
+
+We actually need to subscribe to a stream of all transactions, then manually filter allowed tokens from the token master list or the Firebase tokens list. Right now we only send notifications for SEEDS tokens, no other supported tokens. 
+
 #### Old system
 
 The old notificaiton system was based on mongoDB - when we were running our own node. MongoDB is no longer supported and we don't run our own node anymore anyway so transaction detection needed to be rewritten from scratch. 
