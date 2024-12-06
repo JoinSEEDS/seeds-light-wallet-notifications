@@ -3,7 +3,7 @@ import { readPackage } from "@substreams/manifest";
 import { BlockEmitter } from "@substreams/node";
 import { createNodeTransport } from "@substreams/node/createNodeTransport";
 import dotenv from 'dotenv';
-import sendNotification from "./sendNotification";
+import sendNotification from "./sendNotification.js";
 
 dotenv.config();
 
@@ -25,6 +25,11 @@ const productionMode = true;
 // Parameterize the token contract
 const params = [`filtered_transactions=code:${tokenContract} && action:transfer`];
 
+// Assuming "filtered_transactions" is the module name you want to apply the filter to
+// const params = [`filtered_transactions=code:${tokenContract}`, `filtered_transactions=action:transfer`];
+
+console.log("params: " + JSON.stringify(params, null, 2))
+
 async function setupStream() {
   try {
     console.log(`Start Substream on: ${baseUrl} for ${tokenContract}`);
@@ -34,9 +39,9 @@ async function setupStream() {
     if (!substreamPackage.modules) {
       throw new Error("No modules found in substream package");
     }
-    
-    // applyParams(params, substreamPackage.modules.modules);
-    
+
+    applyParams(params, substreamPackage.modules.modules);
+
     // Connect Transport
     const registry = createRegistry(substreamPackage);
     const transport = createNodeTransport(baseUrl, token, registry);
@@ -61,66 +66,96 @@ const formatter = new Intl.NumberFormat('en-US', {
   currency: 'USD',
   minimumFractionDigits: 2,
   maximumFractionDigits: 4,
-  symbol: "",
+  symbol: "$",
 })
 
-async function processTransaction(transaction) {
-  // console.log(`New transaction: ${JSON.stringify(transaction, null, 2)}`);
-  if (transaction.action === 'transfer') {
-    const { from, to, quantity } = transaction.data;
-    console.log(`Transfer: ${from} -> ${to}: ${quantity}`);
-    const floatAmount = parseFloat(quantity)
-    var amount = formatter.format(floatAmount)
+async function processTransaction(transactionData) {
+  console.log(`process transfer: ${JSON.stringify(transactionData, null, 2)}`);
+  const { from, to, quantity, memo } = transactionData;
+  console.log(`Transfer: ${from} -> ${to}: ${quantity}`);
+  const floatAmount = parseFloat(quantity)
+  var amount = formatter.format(floatAmount)
+  amount = amount.substring(1) // remove the '$'
 
-    const payload = { 
-      title: "",
-      body: 'You received ' + (floatAmount == 1 ? "1 Seed" : amount + " Seeds") + " from " + data.from,
-    }
-
-    try {
-      console.log(`Sending notification to ${to} with payload ${payload.body}`)
-      await sendNotification(to, payload);
-    } catch (error) {
-      console.log("error sending notification: ", error)
-    }
+  const payload = {
+    title: "",
+    body: 'You received ' + (floatAmount == 1 ? "1 Seed" : amount + " Seeds") + " from " + from,
   }
+
+  try {
+    console.log(`Sending notification to ${to} with payload ${payload.body}`)
+    await sendNotification(to, payload);
+  } catch (error) {
+    console.log("error sending notification: ", error)
+  }
+
 }
 
 async function startStreaming() {
   //while (true) {
-    try {
-      console.log("Setting up stream...");
-      const emitter = await setupStream();
+  try {
+    console.log("Setting up stream...");
+    const emitter = await setupStream();
 
-      emitter.on("anyMessage", (message, cursor, clock) => {
-        if (message.filtered_transactions && message.filtered_transactions.transactions) {
-          message.filtered_transactions.transactions.forEach(processTransaction);
-        }
-      });
+    emitter.on("anyMessage", (message, cursor, clock) => {
 
-      emitter.on("progress", (progress) => {
-        // console.log(`Processed ${JSON.stringify(progress, null, 2)} bytes`);
-      });
+      //console.log("on anymessage " + JSON.stringify(message, null, 2))
+      // Parse transaction
+      if (Array.isArray(message.transactionTraces)) {
+        message.transactionTraces.forEach(trace => {
+          if (Array.isArray(trace.actionTraces)) {
+            trace.actionTraces.forEach(actionTrace => {
+              // Check if the action is a transfer
+              if (actionTrace.action && actionTrace.action.name === "transfer") {
+                const transactionData = JSON.parse(actionTrace.action.jsonData);
+                //console.log("Processing transaction:", transactionData);
+                // console.log("receiver ", actionTrace.receipt.receiver)
 
-      emitter.on("close", (error) => {
-        if (error) {
-          console.error("Stream closed with error:", error);
-        } else {
-          console.log("Stream closed normally");
-        }
-      });
+                // One action trace is created for each receiver for each transfer
+                // This means that from, to, token contract, and maybe others each get one action trace, because they're all
+                // notified. In Seeds, histry.seeds is also notified. 
 
-      emitter.on("fatalError", (error) => {
-        console.error("Fatal error occurred:", error);
-      });
+                // To make sure only process each transaction once, we check that the receiver is the 'to' account
+                // This way we can be pretty sure we don't process this multiple times. 
 
-      console.log(`Starting stream for token contract: ${tokenContract}`);
-      emitter.start();
-    } catch (error) {
-      console.error("An error occurred:", error);
-      console.log("Reconnecting in 5 seconds...");
-      await new Promise(resolve => setTimeout(resolve, 5000));
-    }
+                // On the other hand a transaction may contain the same action multiple times - e.g. multiple transfers
+                // to different receivers, or the same receiver, and so on. Many exchanges can't handle this properly
+                // But this code should handle it properly. 
+                if (actionTrace.receipt.receiver == transactionData.to) {
+                  processTransaction(transactionData);
+                }
+              }
+            });
+          }
+        });
+      } else {
+        console.log("No transaction traces found in message.");
+      }
+    });
+
+    emitter.on("progress", (progress) => {
+      // console.log(`Processed ${JSON.stringify(progress, null, 2)} bytes`);
+    });
+
+    emitter.on("close", (error) => {
+      if (error) {
+        console.error("Stream closed with error:", error);
+      } else {
+        console.log("Stream closed normally");
+      }
+    });
+
+    emitter.on("fatalError", (error) => {
+      console.error("Fatal error occurred:", error);
+    });
+
+    console.log(`Starting stream for token contract: ${tokenContract}`);
+    emitter.start();
+  } catch (error) {
+    console.error("An error occurred:", error);
+    console.log("Reconnecting in 5 seconds...");
+    await new Promise(resolve => setTimeout(resolve, 5000));
+  }
   //}
 }
 

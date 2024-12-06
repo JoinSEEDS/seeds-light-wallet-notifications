@@ -1,18 +1,27 @@
-// const params = new URLSearchParams({ 
-//     receiverUserId: data.to,
-//     notificationTitle: "",
-//     notificationContent: 'You received ' + (floatAmount == 1 ? "1 Seed" : amount + " Seeds") + " from " + data.from,
-//     apiKey: CLOUD_API_KEY,
-// })
+// const admin = require("firebase-admin");
+import admin from "firebase-admin";
+import fs from "fs"; // Import the fs module
+import path from "path"; // Import the path module
 
-const admin = require("firebase-admin");
+async function initializeFirebase() {
+    const serviceAccountPath = path.resolve("./cert/seeds-77371-firebase-adminsdk-ogyf6-e941b207db.json");
+    const serviceAccount = JSON.parse(fs.readFileSync(serviceAccountPath, "utf8"));
 
-// Initialize Firebase Admin SDK (ensure your service account key is properly set up)
-if (!admin.apps.length) {
-  admin.initializeApp({
-    credential: admin.credential.cert(require("./cert/seeds-77371-firebase-adminsdk-ogyf6-e941b207db.json")),
-  });
+    if (!admin.apps.length) {
+      admin.initializeApp({
+        credential: admin.credential.cert(serviceAccount),
+    });
+      console.log("Firebase Admin SDK initialized successfully.");
+    }
 }
+  
+  try {
+    initializeFirebase();
+  } catch (error) {
+    console.error("Error initializing Firebase Admin SDK:", error);
+    process.exit(1);
+  }
+    
 
 /**
  * Sends a push notification to all devices for a given user.
@@ -80,4 +89,4 @@ async function sendNotification(userID, payload) {
   }
 }
 
-module.exports = sendNotification;
+export default sendNotification;
