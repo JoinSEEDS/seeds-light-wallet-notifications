@@ -93,8 +93,10 @@ async function processTransaction(transactionData) {
 
 async function startStreaming() {
   let retryCount = 0;
+  let controlledRestart = false;
   const maxRetries = 5;
   const baseDelay = 5000; // 5 seconds
+  const controlledRestartInterval = 12 * 60 * 60 * 1000 // 12 hours
 
   async function connectStream() {
     try {
@@ -153,11 +155,12 @@ async function startStreaming() {
       // Reset retry count on successful connection
       retryCount = 0;
 
-      // Periodically restart the stream every 12 hours
+      // Periodically restart the stream every now and then
       setTimeout(() => {
         console.log("Restarting stream to prevent stalling...");
+        controlledRestart = true;
         emitter.stop(); // Note: this will cause a stream close event, which causes a restart
-      }, 12 * 3600000); // 12 hour
+      }, controlledRestartInterval);
 
     } catch (error) {
       console.error("An error occurred:", error);
@@ -167,7 +170,8 @@ async function startStreaming() {
 
   function retryConnection() {
     if (retryCount < maxRetries) {
-      const delay = baseDelay * Math.pow(2, retryCount);
+      const delay = controlledRestart ? 100 : baseDelay * Math.pow(2, retryCount);
+      controlledRestart = false;
       console.log(`Reconnecting in ${delay / 1000} seconds...`);
       setTimeout(connectStream, delay);
       retryCount++;
