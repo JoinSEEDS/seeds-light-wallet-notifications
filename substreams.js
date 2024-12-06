@@ -156,8 +156,7 @@ async function startStreaming() {
       // Periodically restart the stream every hour
       setTimeout(() => {
         console.log("Restarting stream to prevent stalling...");
-        emitter.stop();
-        retryConnection();
+        emitter.stop(); // Note: this will cause a stream close event, which causes a restart
       }, 3600000); // 1 hour
 
     } catch (error) {
