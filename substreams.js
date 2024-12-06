@@ -153,11 +153,11 @@ async function startStreaming() {
       // Reset retry count on successful connection
       retryCount = 0;
 
-      // Periodically restart the stream every hour
+      // Periodically restart the stream every 12 hours
       setTimeout(() => {
         console.log("Restarting stream to prevent stalling...");
         emitter.stop(); // Note: this will cause a stream close event, which causes a restart
-      }, 3600000); // 1 hour
+      }, 12 * 3600000); // 12 hour
 
     } catch (error) {
       console.error("An error occurred:", error);
